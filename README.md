@@ -14,8 +14,12 @@ A fast, lightweight text editor written in Zig. Designed for efficiency and simp
 ## Commands
 
 - `a <text>` - Append text after current line
+- `b <text>` - Insert text before current line
 - `i <col> <text>` - Insert text at specified column
-- `w <word> o <text>` - Overwrite the Nth word
+- `w <word> <op> <text>` - Word operations at position N:
+  - `o`: overwrite the word
+  - `a`: append after the word
+  - `i`: insert before the word
 - `h` - Show help menu
 - `q` - Quit editor
 - `n` - Move to next line

@@ -310,25 +310,44 @@ const Editor = struct {
             try self.saveFile();
         } else if (mem.eql(u8, command, "w")) {
             const word_str = iter.next() orelse return error.InvalidCommand;
-            const mode = iter.next() orelse return error.InvalidCommand;
+            const operation = iter.next() orelse return error.InvalidCommand;
             const text = iter.rest();
             if (text.len == 0) return error.InvalidCommand;
 
             const word_num = try std.fmt.parseInt(usize, word_str, 10);
-            if (mode.len != 1 or mode[0] != 'o') return error.InvalidCommand;
+            if (operation.len != 1 or !mem.eql(u8, operation, "o") and !mem.eql(u8, operation, "a") and !mem.eql(u8, operation, "i"))
+                return error.InvalidCommand;
 
             var word_iter = mem.split(u8, self.lines.items[self.current_line], " ");
             var word_count: usize = 0;
             var word_start: usize = 0;
+            var word_end: usize = 0;
 
             while (word_iter.next()) |word| {
                 word_count += 1;
                 if (word_count == word_num) {
                     const line = self.lines.items[self.current_line];
-                    var new_line = try self.allocator.alloc(u8, line.len - word.len + text.len);
-                    @memcpy(new_line[0..word_start], line[0..word_start]);
-                    @memcpy(new_line[word_start .. word_start + text.len], text);
-                    @memcpy(new_line[word_start + text.len ..], line[word_start + word.len ..]);
+                    word_end = word_start + word.len;
+                    const new_len = if (operation[0] == 'o')
+                        line.len - word.len + text.len
+                    else
+                        line.len + text.len;
+
+                    var new_line = try self.allocator.alloc(u8, new_len);
+
+                    if (operation[0] == 'o') {
+                        @memcpy(new_line[0..word_start], line[0..word_start]);
+                        @memcpy(new_line[word_start .. word_start + text.len], text);
+                        @memcpy(new_line[word_start + text.len ..], line[word_end..]);
+                    } else if (operation[0] == 'a') {
+                        @memcpy(new_line[0..word_end], line[0..word_end]);
+                        @memcpy(new_line[word_end .. word_end + text.len], text);
+                        @memcpy(new_line[word_end + text.len ..], line[word_end..]);
+                    } else { // 'i'
+                        @memcpy(new_line[0..word_start], line[0..word_start]);
+                        @memcpy(new_line[word_start .. word_start + text.len], text);
+                        @memcpy(new_line[word_start + text.len ..], line[word_start..]);
+                    }
 
                     self.allocator.free(line);
                     self.lines.items[self.current_line] = new_line;
@@ -341,6 +360,13 @@ const Editor = struct {
             if (word_count < word_num) return error.InvalidWordNumber;
         } else if (mem.eql(u8, command, "r")) {
             try self.reload();
+        } else if (mem.eql(u8, command, "b")) {
+            const text = iter.rest();
+            if (text.len == 0) return error.InvalidCommand;
+
+            const new_line = try self.allocator.dupe(u8, text);
+            try self.lines.insert(self.current_line, new_line);
+            try self.saveFile();
         } else if (mem.eql(u8, command, "a")) {
             const text = iter.rest();
             if (text.len == 0) return error.InvalidCommand;
@@ -367,18 +393,22 @@ const Editor = struct {
         const stdout = io.getStdOut().writer();
         try stdout.writeAll(
             \\Commands:
-            \\  i <col> <text>    - Insert text at specified column
-            \\  w <word> o <text> - Overwrite the Nth word
-            \\  a <text>          - Append text after current line
-            \\  h                 - Show this help
-            \\  q                 - Quit editor
-            \\  n                 - Move to next line
-            \\  p                 - Move to previous line
-            \\  g <N>             - Go to line N
-            \\  d                 - Delete current line
-            \\  z <N>             - Set page size to N lines
-            \\  r                 - Reload file from disk
-            \\  c                 - Clear screen and reset cursor
+            \\  h                     - Show this help message
+            \\  i <col> <text>        - Insert text at specified column
+            \\  w <word> <op> <text>  - Word operations at position N:
+            \\                          o: overwrite the word
+            \\                          a: append after the word
+            \\                          i: insert before the word
+            \\  a/b <text>            - Append or insert text after/before
+            \\                          current line
+            \\  d                     - Delete current line
+            \\  n                     - Move to next line
+            \\  p                     - Move to previous line
+            \\  g <N>                 - Go to line N 
+            \\  z <N>                 - Set page size to N lines
+            \\  r                     - Reload file from disk
+            \\  c                     - Clear screen and reset cursor
+            \\  q                     - Quit editor
             \\
         );
     }
