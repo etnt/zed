@@ -53,9 +53,15 @@ fn getWindowSize() !WindowSize {
     }
 }
 
-fn generateRuler(width: usize) ![]u8 {
+fn generateRuler(width: usize, prefix_width: usize) ![]u8 {
         var ruler = std.ArrayList(u8).init(std.heap.page_allocator);
         defer ruler.deinit();
+
+        // Add spaces for the line number prefix alignment
+        var p: usize = 0;
+        while (p < prefix_width) : (p += 1) {
+            try ruler.append(' ');
+        }
 
         var i: usize = 0;
         while (i < width) : (i += 1) {
@@ -89,6 +95,15 @@ const Editor = struct {
     file: fs.File,
     stat: fs.File.Stat,
     page_size: usize = 5,        // Number of lines to display in the context
+
+    fn countDigits(num: usize) usize {
+        var digits: usize = 1;
+        var n = num;
+        while (n >= 10) : (n /= 10) {
+            digits += 1;
+        }
+        return digits;
+    }
 
     pub fn init(allocator: mem.Allocator, filename: []const u8, context_lines: usize) !Editor {
         const file = try fs.cwd().openFile(filename, .{ .mode = .read_write });
@@ -187,9 +202,34 @@ const Editor = struct {
 
         const end = @min(start + self.page_size, total_lines);
 
-        // Display lines
+        // Calculate the width needed for line numbers
+        const max_line_number = self.lines.items.len;
+        const line_number_width = blk: {
+            var width: usize = 1;
+            var num = max_line_number;
+            while (num >= 10) : (num /= 10) {
+                width += 1;
+            }
+            break :blk width;
+        };
+
+        // Display lines with right-aligned numbers
+        var padding_buf: [20]u8 = undefined;
         for (start..end) |i| {
-            try stdout.print("{d}: {s}\n", .{ i + 1, self.lines.items[i] });
+            const num_width = countDigits(i + 1);
+            const padding_len = line_number_width - num_width;
+            
+            // Fill padding buffer with spaces
+            var j: usize = 0;
+            while (j < padding_len) : (j += 1) {
+                padding_buf[j] = ' ';
+            }
+            
+            try stdout.print("{s}{d}: {s}\n", .{
+                padding_buf[0..padding_len],
+                i + 1,
+                self.lines.items[i]
+            });
         }
 
         // Add empty lines if we have fewer than 5 lines
@@ -202,7 +242,8 @@ const Editor = struct {
 
         // Get terminal width and generate ruler
         const window_size = try getWindowSize();
-        const ruler = try generateRuler(@intCast(window_size.width));
+        const prefix_width = line_number_width + 2; // +2 for ": "
+        const ruler = try generateRuler(@intCast(window_size.width), prefix_width);
         defer std.heap.page_allocator.free(ruler);
 
         // Show ruler and prompt at the bottom
