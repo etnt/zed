@@ -4,9 +4,72 @@ const io = std.io;
 const mem = std.mem;
 const process = std.process;
 const heap = std.heap;
+const os = std.os;
+const builtin = @import("builtin");
 
 const MAX_LINE_LEN = 4096;
 const DEFAULT_CONTEXT_LINES = 5;
+
+const WindowSize = struct {
+    width: u16,
+    height: u16,
+};
+
+// Cross-platform terminal size detection
+fn getWindowSize() !WindowSize {
+    if (builtin.os.tag == .windows) {
+        const HANDLE = std.os.windows.HANDLE;
+        const CONSOLE_SCREEN_BUFFER_INFO = std.os.windows.CONSOLE_SCREEN_BUFFER_INFO;
+        const kernel32 = struct {
+            extern "kernel32" fn GetConsoleScreenBufferInfo(
+                console: HANDLE,
+                info: *CONSOLE_SCREEN_BUFFER_INFO,
+            ) callconv(.Stdcall) std.os.windows.BOOL;
+        };
+
+        const h_stdout = std.os.windows.GetStdHandle(std.os.windows.STD_OUTPUT_HANDLE) catch return error.NoTty;
+        var info: CONSOLE_SCREEN_BUFFER_INFO = undefined;
+        if (kernel32.GetConsoleScreenBufferInfo(h_stdout, &info) == 0) {
+            return error.NoTty;
+        }
+        return WindowSize{
+            .width = @intCast(info.srWindow.Right - info.srWindow.Left + 1),
+            .height = @intCast(info.srWindow.Bottom - info.srWindow.Top + 1),
+        };
+    } else {
+        if (builtin.os.tag != .linux) {
+            return WindowSize{ .width = 80, .height = 24 }; // fallback for non-Linux
+        }
+
+        var ws: os.linux.winsize = undefined;
+        const fd = std.io.getStdOut().handle;
+        const rc = os.linux.ioctl(fd, os.linux.TIOCGWINSZ, @intFromPtr(&ws));
+        if (rc == -1) return error.NoTty;
+
+        return WindowSize{
+            .width = ws.ws_col,
+            .height = ws.ws_row,
+        };
+    }
+}
+
+fn generateRuler(width: usize) ![]u8 {
+        var ruler = std.ArrayList(u8).init(std.heap.page_allocator);
+        defer ruler.deinit();
+
+        var i: usize = 0;
+        while (i < width) : (i += 1) {
+            if (i % 10 == 0) {
+                try ruler.append('|');
+            } else if (i % 5 == 0) {
+                try ruler.append('+');
+            } else {
+                try ruler.append('-');
+            }
+        }
+
+        return ruler.toOwnedSlice();
+    }
 
 const EditorError = error{
     InvalidCommand,
@@ -116,7 +179,13 @@ const Editor = struct {
             }
         }
 
-        // Show prompt at the bottom
+        // Get terminal width and generate ruler
+        const window_size = try getWindowSize();
+        const ruler = try generateRuler(@intCast(window_size.width));
+        defer std.heap.page_allocator.free(ruler);
+
+        // Show ruler and prompt at the bottom
+        try stdout.print("{s}\n", .{ruler});
         try stdout.print("({d})> ", .{self.current_line + 1});
     }
 
@@ -209,7 +278,7 @@ const Editor = struct {
         } else if (mem.eql(u8, command, "a")) {
             const text = iter.rest();
             if (text.len == 0) return error.InvalidCommand;
-            
+
             const new_line = try self.allocator.dupe(u8, text);
             try self.lines.insert(self.current_line + 1, new_line);
             self.current_line += 1;
