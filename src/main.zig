@@ -218,13 +218,13 @@ const Editor = struct {
         for (start..end) |i| {
             const num_width = countDigits(i + 1);
             const padding_len = line_number_width - num_width;
-            
+
             // Fill padding buffer with spaces
             var j: usize = 0;
             while (j < padding_len) : (j += 1) {
                 padding_buf[j] = ' ';
             }
-            
+
             try stdout.print("{s}{d}: {s}\n", .{
                 padding_buf[0..padding_len],
                 i + 1,
@@ -463,7 +463,7 @@ pub fn main() !void {
             }
             // Wait for user input before continuing
             _ = try stdin.readUntilDelimiter(&buf, '\n');
-            return;
+            continue;
         };
 
         if (!should_continue) break;
