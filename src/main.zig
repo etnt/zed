@@ -88,6 +88,7 @@ const Editor = struct {
     allocator: mem.Allocator,
     file: fs.File,
     stat: fs.File.Stat,
+    page_size: usize = 5,        // Number of lines to display in the context
 
     pub fn init(allocator: mem.Allocator, filename: []const u8, context_lines: usize) !Editor {
         const file = try fs.cwd().openFile(filename, .{ .mode = .read_write });
@@ -128,21 +129,41 @@ const Editor = struct {
         self.file.close();
     }
 
+    /// Save the current file contents to disk
     fn saveFile(self: *Editor) !void {
+        // Move the file cursor to the beginning
         try self.file.seekTo(0);
+
+        // Create a writer for the file
         var writer = self.file.writer();
 
+        // Iterate through all lines in the editor
         for (self.lines.items, 0..) |line, i| {
+            // Write the current line to the file
             try writer.writeAll(line);
+
+            // Add a newline character after each line, except for the last one
             if (i < self.lines.items.len - 1) {
                 try writer.writeByte('\n');
             }
         }
 
+        // Set the end of the file to the current position
+        // This effectively truncates the file if it was previously longer
         try self.file.setEndPos(try self.file.getPos());
+
+        // Ensure all data is written to the file on disk
         try self.file.sync();
     }
 
+    /// Set the number of lines to display in the context
+    fn setPageSize(self: *Editor, page_size: usize) !void {
+        if (page_size > 0) {
+            self.page_size = page_size;
+        }
+    }
+
+    /// Display the current file contents with a prompt at the bottom
     pub fn display(self: *Editor) !void {
         const stdout = io.getStdOut().writer();
 
@@ -150,7 +171,7 @@ const Editor = struct {
         const total_lines = self.lines.items.len;
         var start: usize = 0;
 
-        if (total_lines <= 5) {
+        if (total_lines <= self.page_size) {
             // If we have 5 or fewer lines, show all of them
             start = 0;
         } else {
@@ -164,7 +185,7 @@ const Editor = struct {
             }
         }
 
-        const end = @min(start + 5, total_lines);
+        const end = @min(start + self.page_size, total_lines);
 
         // Display lines
         for (start..end) |i| {
@@ -172,9 +193,9 @@ const Editor = struct {
         }
 
         // Add empty lines if we have fewer than 5 lines
-        if (end - start < 5) {
+        if (end - start < self.page_size) {
             var i: usize = 0;
-            while (i < 5 - (end - start)) : (i += 1) {
+            while (i < self.page_size - (end - start)) : (i += 1) {
                 try stdout.writeAll("\n");
             }
         }
@@ -200,6 +221,10 @@ const Editor = struct {
         } else if (mem.eql(u8, command, "c")) {
             // Clear screen and reset cursor
             try self.clearScreen();
+        } else if (mem.eql(u8, command, "z")) {
+            const page_size_str = iter.next() orelse return error.InvalidCommand;
+            const page_size = try std.fmt.parseInt(usize, page_size_str, 10);
+            try self.setPageSize(page_size);
         } else if (mem.eql(u8, command, "n")) {
             if (self.current_line < self.lines.items.len - 1) {
                 self.current_line += 1;
@@ -310,6 +335,7 @@ const Editor = struct {
             \\  p                 - Move to previous line
             \\  g <N>             - Go to line N
             \\  d                 - Delete current line
+            \\  z <N>             - Set page size to N lines
             \\  r                 - Reload file from disk
             \\  c                 - Clear screen and reset cursor
             \\
