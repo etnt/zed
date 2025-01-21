@@ -63,7 +63,7 @@ fn generateRuler(width: usize, prefix_width: usize) ![]u8 {
             try ruler.append(' ');
         }
 
-        var i: usize = 0;
+        var i: usize = 1;
         while (i < width) : (i += 1) {
             if (i % 10 == 0) {
                 try ruler.append('|');
@@ -91,6 +91,7 @@ const Editor = struct {
     context_lines: usize,
     lines: std.ArrayList([]u8),
     current_line: usize,
+    current_column: usize = 0,  // Add current column tracking
     allocator: mem.Allocator,
     file: fs.File,
     stat: fs.File.Stat,
@@ -224,12 +225,38 @@ const Editor = struct {
             while (j < padding_len) : (j += 1) {
                 padding_buf[j] = ' ';
             }
+            // For the current line, we need to handle reverse video for the current column
+            if (i == self.current_line) {
+                const line = self.lines.items[i];
+                try stdout.print("{s}{d}: ", .{
+                    padding_buf[0..padding_len],
+                    i + 1,
+                });
 
-            try stdout.print("{s}{d}: {s}\n", .{
-                padding_buf[0..padding_len],
-                i + 1,
-                self.lines.items[i]
-            });
+                // Print up to the current column
+                if (self.current_column > 0) {
+                    try stdout.writeAll(line[0..@min(self.current_column, line.len)]);
+                }
+
+                // Print the character at current column in reverse video
+                if (self.current_column < line.len) {
+                    try stdout.writeAll("\x1b[7m"); // Enter reverse video mode
+                    try stdout.writeByte(line[self.current_column]);
+                    try stdout.writeAll("\x1b[27m"); // Exit reverse video mode
+
+                    // Print the rest of the line
+                    if (self.current_column + 1 < line.len) {
+                        try stdout.writeAll(line[self.current_column + 1..]);
+                    }
+                }
+                try stdout.writeByte('\n');
+            } else {
+                try stdout.print("{s}{d}: {s}\n", .{
+                    padding_buf[0..padding_len],
+                    i + 1,
+                    self.lines.items[i]
+                });
+            }
         }
 
         // Add empty lines if we have fewer than 5 lines
@@ -305,13 +332,14 @@ const Editor = struct {
             }
             try self.saveFile();
         } else if (mem.eql(u8, command, "i")) {
-            const col_str = iter.next() orelse return error.InvalidCommand;
+            var col = self.current_column;
             const text = iter.rest();
             if (text.len == 0) return error.InvalidCommand;
 
-            const col = try std.fmt.parseInt(usize, col_str, 10);
             const line = self.lines.items[self.current_line];
-            if (col > line.len) return error.InvalidColumnNumber;
+
+            // Column can't go past the end of the line
+            if (col > line.len) col = line.len;
 
             var new_line = try self.allocator.alloc(u8, line.len + text.len);
             @memcpy(new_line[0..col], line[0..col]);
@@ -389,6 +417,16 @@ const Editor = struct {
             self.current_line += 1;
             try self.saveFile();
         } else {
+            // Now check if it is just a number, i.e set the current column
+            if (command.len > 0) {
+                const num = try std.fmt.parseInt(usize, command, 10);
+                if (num > 0) {
+                    self.current_column = num - 1;
+                    return true;
+                } else {
+                    return error.InvalidColumnNumber;
+                }
+            }
             return error.InvalidCommand;
         }
 
@@ -407,7 +445,8 @@ const Editor = struct {
         try stdout.writeAll(
             \\Commands:
             \\  h                     - Show this help message
-            \\  i <col> <text>        - Insert text at specified column
+            \\  <num>                 - Set the current column
+            \\  i <text>              - Insert text at current column
             \\  w <word> <op> <text>  - Word operations at position N:
             \\                          o: overwrite the word
             \\                          a: append after the word

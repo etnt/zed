@@ -1,5 +1,5 @@
 # Zed - Line-based Text Editor
-> A step up from using plain cat
+> A step up from using plain cat or ed
 
 A fast, lightweight text editor written in Zig. Designed for efficiency and simplicity, Zed provides essential text editing capabilities through an intuitive command-line interface.
 
