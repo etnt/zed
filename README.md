@@ -24,6 +24,8 @@ A fast, lightweight text editor written in Zig. Designed for efficiency and simp
 - `q` - Quit editor
 - `n` - Move to next line
 - `p` - Move to previous line
+- `N` - Move to next page
+- `P` - Move to previous page
 - `g <N>` - Go to line N
 - `d` - Delete current line
 - `r` - Reload file from disk

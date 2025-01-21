@@ -94,7 +94,7 @@ const Editor = struct {
     allocator: mem.Allocator,
     file: fs.File,
     stat: fs.File.Stat,
-    page_size: usize = 5,        // Number of lines to display in the context
+    page_size: usize = 5, // Number of lines to display in the context
 
     fn countDigits(num: usize) usize {
         var digits: usize = 1;
@@ -274,6 +274,19 @@ const Editor = struct {
             if (self.current_line > 0) {
                 self.current_line -= 1;
             }
+        } else if (mem.eql(u8, command, "N")) {
+            const new_line = self.current_line + self.page_size;
+            if (new_line < self.lines.items.len) {
+                self.current_line = new_line;
+            } else {
+                self.current_line = self.lines.items.len - 1;
+            }
+        } else if (mem.eql(u8, command, "P")) {
+            if (self.current_line >= self.page_size) {
+                self.current_line -= self.page_size;
+            } else {
+                self.current_line = 0;
+            }
         } else if (mem.eql(u8, command, "g")) {
             const line_str = iter.next() orelse return error.InvalidCommand;
             const line_num = try std.fmt.parseInt(usize, line_str, 10);
@@ -402,8 +415,8 @@ const Editor = struct {
             \\  a/b <text>            - Append or insert text after/before
             \\                          current line
             \\  d                     - Delete current line
-            \\  n                     - Move to next line
-            \\  p                     - Move to previous line
+            \\  n/N                   - Move to next line/page
+            \\  p/P                   - Move to previous line/page
             \\  g <N>                 - Go to line N 
             \\  z <N>                 - Set page size to N lines
             \\  r                     - Reload file from disk
