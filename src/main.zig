@@ -10,6 +10,16 @@ const builtin = @import("builtin");
 const MAX_LINE_LEN = 4096;
 const DEFAULT_CONTEXT_LINES = 5;
 
+const winsize = extern struct {
+    ws_row: u16,
+    ws_col: u16,
+    ws_xpixel: u16,
+    ws_ypixel: u16,
+};
+
+// TIOCGWINSZ value for Linux x86_64
+const TIOCGWINSZ: u64 = 0x5413;
+
 const WindowSize = struct {
     width: u16,
     height: u16,
@@ -41,9 +51,9 @@ fn getWindowSize() !WindowSize {
             return WindowSize{ .width = 80, .height = 24 }; // fallback for non-Linux
         }
 
-        var ws: os.linux.winsize = undefined;
+        var ws: winsize = undefined;
         const fd = std.io.getStdOut().handle;
-        const rc = os.linux.ioctl(fd, os.linux.TIOCGWINSZ, @intFromPtr(&ws));
+        const rc = os.linux.ioctl(fd, TIOCGWINSZ, @intFromPtr(&ws));
         if (rc == -1) return error.NoTty;
 
         return WindowSize{
@@ -54,28 +64,28 @@ fn getWindowSize() !WindowSize {
 }
 
 fn generateRuler(width: usize, prefix_width: usize) ![]u8 {
-        var ruler = std.ArrayList(u8).init(std.heap.page_allocator);
-        defer ruler.deinit();
+    var ruler = std.ArrayList(u8).init(std.heap.page_allocator);
+    defer ruler.deinit();
 
-        // Add spaces for the line number prefix alignment
-        var p: usize = 0;
-        while (p < prefix_width) : (p += 1) {
-            try ruler.append(' ');
-        }
-
-        var i: usize = 1;
-        while (i < width) : (i += 1) {
-            if (i % 10 == 0) {
-                try ruler.append('|');
-            } else if (i % 5 == 0) {
-                try ruler.append('+');
-            } else {
-                try ruler.append('-');
-            }
-        }
-
-        return ruler.toOwnedSlice();
+    // Add spaces for the line number prefix alignment
+    var p: usize = 0;
+    while (p < prefix_width) : (p += 1) {
+        try ruler.append(' ');
     }
+
+    var i: usize = 1;
+    while (i < width) : (i += 1) {
+        if (i % 10 == 0) {
+            try ruler.append('|');
+        } else if (i % 5 == 0) {
+            try ruler.append('+');
+        } else {
+            try ruler.append('-');
+        }
+    }
+
+    return ruler.toOwnedSlice();
+}
 
 const EditorError = error{
     InvalidCommand,
@@ -90,7 +100,7 @@ const Editor = struct {
     filename: []const u8,
     lines: std.ArrayList([]u8),
     current_line: usize,
-    current_column: usize = 0,  // Add current column tracking
+    current_column: usize = 0, // Add current column tracking
     allocator: mem.Allocator,
     file: fs.File,
     stat: fs.File.Stat,
@@ -245,16 +255,12 @@ const Editor = struct {
 
                     // Print the rest of the line
                     if (self.current_column + 1 < line.len) {
-                        try stdout.writeAll(line[self.current_column + 1..]);
+                        try stdout.writeAll(line[self.current_column + 1 ..]);
                     }
                 }
                 try stdout.writeByte('\n');
             } else {
-                try stdout.print("{s}{d}: {s}\n", .{
-                    padding_buf[0..padding_len],
-                    i + 1,
-                    self.lines.items[i]
-                });
+                try stdout.print("{s}{d}: {s}\n", .{ padding_buf[0..padding_len], i + 1, self.lines.items[i] });
             }
         }
 
@@ -269,12 +275,12 @@ const Editor = struct {
         // Get terminal width and generate ruler
         const window_size = try getWindowSize();
         const prefix_width = line_number_width + 2; // +2 for ": "
-        const ruler = try generateRuler(@intCast(window_size.width), prefix_width);
+        const ruler = try generateRuler(@intCast(window_size.width - prefix_width), prefix_width);
         defer std.heap.page_allocator.free(ruler);
 
         // Show ruler and prompt at the bottom
         try stdout.print("{s}\n", .{ruler});
-        try stdout.print("({d})> ", .{self.current_line + 1});
+        try stdout.print("({d}:{d})> ", .{ self.current_line + 1, self.current_column + 1 });
     }
 
     pub fn handleCommand(self: *Editor, cmd: []const u8) !bool {
@@ -380,7 +386,7 @@ const Editor = struct {
                     if (operation[0] == 'd') {
                         @memcpy(new_line[0..word_start], line[0..word_start]);
                         if (word_end < line.len - 1) {
-                            @memcpy(new_line[word_start..], line[word_end + 1..]);
+                            @memcpy(new_line[word_start..], line[word_end + 1 ..]);
                         }
                     } else if (operation[0] == 'o') {
                         @memcpy(new_line[0..word_start], line[0..word_start]);
@@ -425,7 +431,7 @@ const Editor = struct {
                 var new_line = try self.allocator.alloc(u8, line.len - 1);
                 @memcpy(new_line[0..self.current_column], line[0..self.current_column]);
                 if (self.current_column < line.len - 1) {
-                    @memcpy(new_line[self.current_column..], line[self.current_column + 1..]);
+                    @memcpy(new_line[self.current_column..], line[self.current_column + 1 ..]);
                 }
                 self.allocator.free(line);
                 self.lines.items[self.current_line] = new_line;
