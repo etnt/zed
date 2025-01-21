@@ -416,6 +416,18 @@ const Editor = struct {
             try self.lines.insert(self.current_line + 1, new_line);
             self.current_line += 1;
             try self.saveFile();
+        } else if (mem.eql(u8, command, "x")) {
+            const line = self.lines.items[self.current_line];
+            if (self.current_column < line.len) {
+                var new_line = try self.allocator.alloc(u8, line.len - 1);
+                @memcpy(new_line[0..self.current_column], line[0..self.current_column]);
+                if (self.current_column < line.len - 1) {
+                    @memcpy(new_line[self.current_column..], line[self.current_column + 1..]);
+                }
+                self.allocator.free(line);
+                self.lines.items[self.current_line] = new_line;
+                try self.saveFile();
+            }
         } else {
             // Now check if it is just a number, i.e set the current column
             if (command.len > 0) {
@@ -447,6 +459,7 @@ const Editor = struct {
             \\  h                     - Show this help message
             \\  <num>                 - Set the current column
             \\  i <text>              - Insert text at current column
+            \\  x                     - Delete character at current column
             \\  w <word> <op> <text>  - Word operations at position N:
             \\                          o: overwrite the word
             \\                          a: append after the word
