@@ -88,7 +88,6 @@ const EditorError = error{
 
 const Editor = struct {
     filename: []const u8,
-    context_lines: usize,
     lines: std.ArrayList([]u8),
     current_line: usize,
     current_column: usize = 0,  // Add current column tracking
@@ -128,7 +127,7 @@ const Editor = struct {
 
         return Editor{
             .filename = filename,
-            .context_lines = context_lines,
+            .page_size = context_lines,
             .lines = lines,
             .current_line = 0,
             .allocator = allocator,
