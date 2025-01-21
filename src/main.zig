@@ -284,6 +284,8 @@ const Editor = struct {
 
         if (mem.eql(u8, command, "q")) {
             return false;
+        } else if (mem.eql(u8, command, "s")) {
+            try self.saveFile();
         } else if (mem.eql(u8, command, "h")) {
             try self.showHelp();
         } else if (mem.eql(u8, command, "c")) {
@@ -330,7 +332,6 @@ const Editor = struct {
             if (self.current_line >= self.lines.items.len) {
                 self.current_line = self.lines.items.len - 1;
             }
-            try self.saveFile();
         } else if (mem.eql(u8, command, "i")) {
             var col = self.current_column;
             const text = iter.rest();
@@ -348,15 +349,14 @@ const Editor = struct {
 
             self.allocator.free(line);
             self.lines.items[self.current_line] = new_line;
-            try self.saveFile();
         } else if (mem.eql(u8, command, "w")) {
             const word_str = iter.next() orelse return error.InvalidCommand;
             const operation = iter.next() orelse return error.InvalidCommand;
             const text = iter.rest();
-            if (text.len == 0) return error.InvalidCommand;
+            if ((text.len == 0) and (operation[0] != 'd')) return error.InvalidCommand;
 
             const word_num = try std.fmt.parseInt(usize, word_str, 10);
-            if (operation.len != 1 or !mem.eql(u8, operation, "o") and !mem.eql(u8, operation, "a") and !mem.eql(u8, operation, "i"))
+            if (operation.len != 1 or !mem.eql(u8, operation, "d") and !mem.eql(u8, operation, "o") and !mem.eql(u8, operation, "a") and !mem.eql(u8, operation, "i"))
                 return error.InvalidCommand;
 
             var word_iter = mem.split(u8, self.lines.items[self.current_line], " ");
@@ -369,14 +369,21 @@ const Editor = struct {
                 if (word_count == word_num) {
                     const line = self.lines.items[self.current_line];
                     word_end = word_start + word.len;
-                    const new_len = if (operation[0] == 'o')
+                    const new_len = if (operation[0] == 'd')
+                        line.len - (word_end - word_start) - if (word_end < line.len) @as(usize, 1) else 0
+                    else if (operation[0] == 'o')
                         line.len - word.len + text.len
                     else
                         line.len + text.len;
 
                     var new_line = try self.allocator.alloc(u8, new_len);
 
-                    if (operation[0] == 'o') {
+                    if (operation[0] == 'd') {
+                        @memcpy(new_line[0..word_start], line[0..word_start]);
+                        if (word_end < line.len - 1) {
+                            @memcpy(new_line[word_start..], line[word_end + 1..]);
+                        }
+                    } else if (operation[0] == 'o') {
                         @memcpy(new_line[0..word_start], line[0..word_start]);
                         @memcpy(new_line[word_start .. word_start + text.len], text);
                         @memcpy(new_line[word_start + text.len ..], line[word_end..]);
@@ -392,7 +399,6 @@ const Editor = struct {
 
                     self.allocator.free(line);
                     self.lines.items[self.current_line] = new_line;
-                    try self.saveFile();
                     break;
                 }
                 word_start += word.len + 1;
@@ -407,7 +413,6 @@ const Editor = struct {
 
             const new_line = try self.allocator.dupe(u8, text);
             try self.lines.insert(self.current_line, new_line);
-            try self.saveFile();
         } else if (mem.eql(u8, command, "a")) {
             const text = iter.rest();
             if (text.len == 0) return error.InvalidCommand;
@@ -415,10 +420,9 @@ const Editor = struct {
             const new_line = try self.allocator.dupe(u8, text);
             try self.lines.insert(self.current_line + 1, new_line);
             self.current_line += 1;
-            try self.saveFile();
         } else if (mem.eql(u8, command, "x")) {
             const line = self.lines.items[self.current_line];
-            if (self.current_column < line.len) {
+            if (self.current_column < line.len and line.len > 0) {
                 var new_line = try self.allocator.alloc(u8, line.len - 1);
                 @memcpy(new_line[0..self.current_column], line[0..self.current_column]);
                 if (self.current_column < line.len - 1) {
@@ -426,7 +430,6 @@ const Editor = struct {
                 }
                 self.allocator.free(line);
                 self.lines.items[self.current_line] = new_line;
-                try self.saveFile();
             }
         } else {
             // Now check if it is just a number, i.e set the current column
@@ -461,9 +464,8 @@ const Editor = struct {
             \\  i <text>              - Insert text at current column
             \\  x                     - Delete character at current column
             \\  w <word> <op> <text>  - Word operations at position N:
-            \\                          o: overwrite the word
-            \\                          a: append after the word
-            \\                          i: insert before the word
+            \\                          <op> = d/o/a/i : delete, overwrite,
+            \\                          append after, insert before
             \\  a/b <text>            - Append or insert text after/before
             \\                          current line
             \\  d                     - Delete current line
@@ -473,6 +475,7 @@ const Editor = struct {
             \\  z <N>                 - Set page size to N lines
             \\  r                     - Reload file from disk
             \\  c                     - Clear screen and reset cursor
+            \\  s                     - Save changes to disk
             \\  q                     - Quit editor
             \\
         );
