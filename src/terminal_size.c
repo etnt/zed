@@ -6,7 +6,11 @@
 #include <sys/ioctl.h> // ioctl()
 
 int main() {
-	int tty_fd = open("/dev/tty", O_EVTONLY | O_NONBLOCK);
+#ifdef __APPLE__
+  int tty_fd = open("/dev/tty", O_EVTONLY | O_NONBLOCK);
+#else
+  int tty_fd = open("/dev/tty", O_RDONLY | O_NONBLOCK);
+#endif
 	if (tty_fd == -1) {
 		fprintf(stderr, "Opening `/dev/tty` failed (%d): %s\n", errno, strerror(errno));
 		return 1;
