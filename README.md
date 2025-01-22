@@ -11,6 +11,10 @@ So here is `zed` , a lightweight text editor written in Zig.
 perform common text operations. It is designed to be fast, simple to use and
 the most important thing, it was fun to write.
 
+## Demo
+
+<table><tr><td><img src="zed.gif" width="500"></td></tr></table>
+
 ## Commands
 
 ### Navigate
