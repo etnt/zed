@@ -2,7 +2,7 @@
 > A step up from using plain cat or ed
 
 How many times haven't I started to enter text into a new file with `cat`?
-Then what? `ed` is just to awkward, nano fast but too confusingly similar to Emacs,
+Then what? `ed` is just too awkward, nano fast but too confusingly similar to Emacs,
 Emacs is great but a bit heavy to start, Vim or Helix is ok I guess...but still...
 
 So here is `zed` , a lightweight text editor written in Zig.
