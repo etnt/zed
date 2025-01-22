@@ -17,8 +17,14 @@ const winsize = extern struct {
     ws_ypixel: u16,
 };
 
-// TIOCGWINSZ value for Linux x86_64
-const TIOCGWINSZ: u64 = 0x5413;
+// External ioctl function declaration
+extern fn ioctl(fd: c_int, request: c_ulong, ...) c_int;
+
+// TIOCGWINSZ values
+const TIOCGWINSZ = if (builtin.os.tag == .linux)
+    @as(c_ulong, 0x5413)
+else
+    @as(c_ulong, 0x40087468);
 
 const WindowSize = struct {
     width: u16,
@@ -47,13 +53,16 @@ fn getWindowSize() !WindowSize {
             .height = @intCast(info.srWindow.Bottom - info.srWindow.Top + 1),
         };
     } else {
-        if (builtin.os.tag != .linux) {
-            return WindowSize{ .width = 80, .height = 24 }; // fallback for non-Linux
+        // Open /dev/tty directly as it's more reliable than using stdout
+        const tty = try fs.cwd().openFile("/dev/tty", .{ .mode = .read_only });
+        defer tty.close();
+
+        if (builtin.os.tag != .linux and builtin.os.tag != .macos) {
+            return WindowSize{ .width = 80, .height = 24 };
         }
 
         var ws: winsize = undefined;
-        const fd = std.io.getStdOut().handle;
-        const rc = os.linux.ioctl(fd, TIOCGWINSZ, @intFromPtr(&ws));
+        const rc = ioctl(tty.handle, TIOCGWINSZ, @intFromPtr(&ws));
         if (rc == -1) return error.NoTty;
 
         return WindowSize{
